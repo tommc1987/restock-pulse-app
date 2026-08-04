@@ -9,6 +9,7 @@ import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prism
 import prisma from "./db.server";
 import { syncShopInventory } from "./models/inventory-sync.server";
 import { ensureAllWebhooksRegistered } from "./models/webhook-registration.server";
+import { MONTHLY_PLAN } from "./billing.server";
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -20,7 +21,7 @@ const shopify = shopifyApp({
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
   billing: {
-    "Monthly Subscription": {
+    [MONTHLY_PLAN]: {
       trialDays: 7,
       lineItems: [
         {
