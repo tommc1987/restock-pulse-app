@@ -1,0 +1,5 @@
+-- CreateTable
+CREATE TABLE "ShopSyncStatus" (
+    "shop" TEXT NOT NULL PRIMARY KEY,
+    "lastSyncedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

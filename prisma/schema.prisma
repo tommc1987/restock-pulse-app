@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// Append this model to the schema.prisma that ships with the Shopify Remix
+// template (it already has a Session model — leave that as-is, just add this).
+
+model ProductSnapshot {
+  id                              String   @id @default(cuid())
+  shop                            String // e.g. "your-store.myshopify.com"
+  productId                       String
+  title                           String
+  currentInventory                Int
+  unitsSoldLast7Days              Int
+  unitsSoldPrevious30DaysDailyAvg Float
+  daysSinceLastSale               Int
+  updatedAt                       DateTime @updatedAt
+
+  @@unique([shop, productId])
+  @@index([shop])
+}
+
+// Populate this table via a nightly scheduled job (Remix + a cron trigger, or
+// a simple GitHub Action hitting a webhook route) that:
+//   1. Pulls each installed shop's orders (last 30 days) + inventory via Admin GraphQL
+//   2. Aggregates into the fields above
+//   3. Upserts one row per product per shop
+// Keep the sync job separate from the request/response cycle — it should never
+// run inline on a page load.
+
+// Explicit "has a full catalogue sync ever completed for this shop" signal.
+// Deliberately NOT inferred from ProductSnapshot row count — that breaks for
+// a shop with a genuinely empty catalogue, where 0 rows is also the correct
+// end state after a successful sync. Written only by syncShopInventory()
+// (install-time backfill + daily cron), never by the single-product webhook
+// handler — that's a partial update, not a full-catalogue baseline.
+model ShopSyncStatus {
+  shop         String   @id
+  lastSyncedAt DateTime @default(now()) @updatedAt
+}
+
+model BillingFailure {
+  id              String   @id @default(cuid())
+  shop            String
+  contractId      String
+  customerEmail   String?
+  errorCode       String
+  category        String
+  reason          String
+  suggestedAction String
+  amount          Float
+  occurredAt      DateTime
+
+  @@unique([shop, contractId, occurredAt])
+  @@index([shop])
+}
+
