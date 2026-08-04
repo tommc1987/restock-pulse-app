@@ -84,6 +84,16 @@ export async function action({ request }: ActionFunctionArgs) {
 
 // --- Fly scheduled machine (already created — "daily-inventory-sync") ---
 //
+// This machine exists only as a `fly machine run` invocation — there's no
+// fly.toml entry or script for it, so if it's ever deleted, nothing in this
+// repo recreates it automatically. Run the command below to recreate it.
+//
+// Verified 2026-08-04 by pulling the live machine's actual config
+// (`fly machine status 82d1de1a732428 -a restockpulse-app --display-config`)
+// and confirming it matches this recipe exactly — not reconstructed from
+// memory. If you change this machine, re-verify the same way and update
+// this comment.
+//
 // flyctl machine run curlimages/curl:latest -a restockpulse-app \
 //   --region lhr --schedule daily --name daily-inventory-sync \
 //   --vm-memory 256 --entrypoint /bin/sh \
@@ -92,3 +102,16 @@ export async function action({ request }: ActionFunctionArgs) {
 // Runs inside the same Fly app as the web service, so SYNC_JOB_SECRET is
 // already available in its environment via the app's existing secret —
 // nothing extra to configure.
+//
+// Not in the command above because they're Fly's own defaults for any
+// scheduled machine (confirmed via `fly machine run --help`), not something
+// this recipe passes explicitly:
+//   - restart policy: on-failure, max 3 retries
+//   - guest: shared-cpu-1x (1 vCPU)
+//
+// The image resolves through Fly's Docker Hub mirror at recreation time;
+// the exact digest running as of the last verification above was
+// docker-hub-mirror.fly.io/curlimages/curl:latest@sha256:1ab04d023ece37e6ec991bf3306ad04e0ef0084e94a5c6b6563cfcb9563169db.
+// The command uses the floating `:latest` tag deliberately — pin to that
+// digest instead if byte-for-byte reproducibility ever matters more than
+// picking up curl's upstream fixes.
