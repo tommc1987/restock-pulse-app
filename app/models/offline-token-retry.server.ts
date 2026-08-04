@@ -48,3 +48,26 @@ export async function withOfflineTokenRetry<T>(fn: () => Promise<T>): Promise<T>
     return await fn();
   }
 }
+
+/**
+ * Same retry as withOfflineTokenRetry, for call sites whose `fn` reads the
+ * Request body (authenticate.webhook() consumes it verifying the HMAC).
+ * A plain retry would hand the second attempt an already-used body and fail
+ * with a "body already used" error instead of a clean second try — so this
+ * clones the request up front, before either copy's body has been touched,
+ * and gives the retry attempt the untouched clone.
+ */
+export async function withOfflineTokenRetryForRequest<T>(
+  request: Request,
+  fn: (request: Request) => Promise<T>,
+): Promise<T> {
+  const retryRequest = request.clone();
+  try {
+    return await fn(request);
+  } catch (error) {
+    if (!isOfflineTokenRefreshFailure(error)) {
+      throw error;
+    }
+    return await fn(retryRequest);
+  }
+}

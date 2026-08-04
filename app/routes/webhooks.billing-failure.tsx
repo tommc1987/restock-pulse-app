@@ -26,6 +26,7 @@
 
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { authenticate, unauthenticated } from "../shopify.server";
+import { withOfflineTokenRetryForRequest } from "../models/offline-token-retry.server";
 import prisma from "../db.server";
 import { classifyFailure } from "../models/dunning-classifier.server";
 
@@ -47,7 +48,9 @@ const CONTRACT_ENRICHMENT_QUERY = `#graphql
 `;
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { shop, payload } = await authenticate.webhook(request);
+  const { shop, payload } = await withOfflineTokenRetryForRequest(request, (req) =>
+    authenticate.webhook(req),
+  );
 
   // These four fields are confirmed real — safe to trust.
   const attemptId = payload.admin_graphql_api_id as string;

@@ -1,9 +1,13 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
+import { withOfflineTokenRetryForRequest } from "../models/offline-token-retry.server";
 import db from "../db.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, session, topic } = await authenticate.webhook(request);
+  const { shop, session, topic } = await withOfflineTokenRetryForRequest(
+    request,
+    (req) => authenticate.webhook(req),
+  );
 
   console.log(`Received ${topic} webhook for ${shop}`);
 

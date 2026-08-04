@@ -6,10 +6,13 @@
 
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
+import { withOfflineTokenRetryForRequest } from "../models/offline-token-retry.server";
 import prisma from "../db.server";
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { topic, shop, payload } = await authenticate.webhook(request);
+  const { topic, shop, payload } = await withOfflineTokenRetryForRequest(request, (req) =>
+    authenticate.webhook(req),
+  );
 
   console.log(`Received ${topic} webhook for ${shop}`);
 
