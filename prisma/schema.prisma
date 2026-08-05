@@ -70,19 +70,3 @@ model ShopSyncStatus {
   lastSyncedAt DateTime @default(now()) @updatedAt
 }
 
-model BillingFailure {
-  id              String   @id @default(cuid())
-  shop            String
-  contractId      String
-  customerEmail   String?
-  errorCode       String
-  category        String
-  reason          String
-  suggestedAction String
-  amount          Float
-  occurredAt      DateTime
-
-  @@unique([shop, contractId, occurredAt])
-  @@index([shop])
-}
-
