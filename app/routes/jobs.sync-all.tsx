@@ -14,7 +14,7 @@ import { unauthenticated } from "../shopify.server"; // template helper for serv
 import { syncShopInventory, loadScoredProducts } from "../models/inventory-sync.server";
 import { scoreCatalogue } from "../models/trend-score.server";
 import { getShopContactInfo, sendDigestEmail } from "../models/email-digest.server";
-import { withOfflineTokenRetry } from "../models/offline-token-retry.server";
+import { withOfflineTokenRetry, isOfflineTokenRefreshFailure } from "../models/offline-token-retry.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   const secret = request.headers.get("X-Sync-Secret");
@@ -57,6 +57,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // Log the real error for every shop that failed — without this, a failed
   // sync just shows as a number with no way to tell why.
   const errors: { shop: string; message: string }[] = [];
+  const sessionsCleaned: string[] = [];
   for (const [i, result] of results.entries()) {
     if (result.status === "rejected") {
       const reason = result.reason;
@@ -75,11 +76,36 @@ export async function action({ request }: ActionFunctionArgs) {
 
       console.error(`[sync-all] Failed for shop ${shops[i]}:`, message);
       errors.push({ shop: shops[i], message });
+
+      // isOfflineTokenRefreshFailure only being true here means BOTH the
+      // original attempt and withOfflineTokenRetry's single retry hit this
+      // exact bare-500 signature — a first failure of any other shape
+      // propagates immediately without a retry (see
+      // offline-token-retry.server.ts), so this can't fire off an unrelated
+      // transient error. Two genuine hits of the same signature means the
+      // shop's offline token is dead, not flaky — most likely an
+      // already-uninstalled shop whose app/uninstalled cleanup never ran.
+      // Delete its session rows so tomorrow's run doesn't retry a lost
+      // cause; mirrors the cleanup webhooks.app.uninstalled.tsx already
+      // does on a clean uninstall.
+      if (isOfflineTokenRefreshFailure(reason)) {
+        await prisma.session.deleteMany({ where: { shop: shops[i] } });
+        console.error(
+          `[sync-all] Removing orphaned session for ${shops[i]} — repeated bare-500 offline token refresh failure`,
+        );
+        sessionsCleaned.push(shops[i]);
+      }
     }
   }
 
   const failed = results.filter((r) => r.status === "rejected").length;
-  return json({ synced: shops.length - failed, failed, total: shops.length, errors });
+  return json({
+    synced: shops.length - failed,
+    failed,
+    total: shops.length,
+    errors,
+    sessionsCleaned,
+  });
 }
 
 // --- Fly scheduled machine (already created — "daily-inventory-sync") ---
