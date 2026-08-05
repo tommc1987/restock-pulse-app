@@ -70,6 +70,7 @@ function buildDigestHtml(shopName: string, scored: ScoredProduct[]): string {
 /** Sends the digest via Resend. Silently skips (no throw) if RESEND_API_KEY
  * isn't set, so a missing key never breaks the sync job itself. */
 export async function sendDigestEmail(
+  shop: string,
   toEmail: string,
   shopName: string,
   scored: ScoredProduct[],
@@ -101,5 +102,10 @@ export async function sendDigestEmail(
   if (!response.ok) {
     const errorText = await response.text();
     console.error(`[email-digest] Failed to send: ${response.status} ${errorText}`);
+    return;
   }
+
+  console.log(
+    `[email-digest] Sent digest to ${toEmail} for ${shop} — ${scored.length} product${scored.length === 1 ? "" : "s"} flagged`,
+  );
 }

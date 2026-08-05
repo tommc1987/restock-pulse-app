@@ -45,7 +45,7 @@ export async function action({ request }: ActionFunctionArgs) {
         if (scored.length > 0) {
           const contact = await getShopContactInfo(admin);
           if (contact) {
-            await sendDigestEmail(contact.email, contact.shopName, scored);
+            await sendDigestEmail(shop, contact.email, contact.shopName, scored);
           }
         }
       } catch (emailError) {
