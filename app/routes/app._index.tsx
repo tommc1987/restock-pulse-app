@@ -9,7 +9,7 @@
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useRevalidator } from "@remix-run/react";
 import { useEffect } from "react";
-import { Page, Layout, Card, DataTable, Badge, EmptyState, BlockStack, Tooltip } from "@shopify/polaris";
+import { Page, Layout, Card, DataTable, Badge, EmptyState, Link, Tooltip } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { withOfflineTokenRetry } from "../models/offline-token-retry.server";
 import { MONTHLY_PLAN } from "../billing.server";
@@ -40,7 +40,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const synced = await hasCompletedSync(session.shop);
   const snapshots = await loadScoredProducts(session.shop);
   const scored = scoreCatalogue(snapshots);
-  return json({ synced, scored });
+  return json({ synced, scored, shop: session.shop });
+}
+
+/** Builds a link to the product's real page in Shopify admin. productId is
+ * a GraphQL GID (gid://shopify/Product/123) — admin URLs need the bare
+ * numeric id — and shop is the full *.myshopify.com domain, while the
+ * admin.shopify.com URL scheme needs just the store handle in front of it. */
+function productAdminUrl(shop: string, productId: string): string {
+  const shopHandle = shop.replace(".myshopify.com", "");
+  const numericId = productId.split("/").pop();
+  return `https://admin.shopify.com/store/${shopHandle}/products/${numericId}`;
 }
 
 function badgeFor(flag: ScoredProduct["flag"]) {
@@ -61,7 +71,7 @@ function badgeFor(flag: ScoredProduct["flag"]) {
 }
 
 export default function Dashboard() {
-  const { synced, scored } = useLoaderData<typeof loader>();
+  const { synced, scored, shop } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
 
   // Poll while unsynced so the page transitions to the real dashboard on
@@ -110,7 +120,9 @@ export default function Dashboard() {
   }
 
   const rows = scored.map((p) => [
-    p.title,
+    <Link url={productAdminUrl(shop, p.productId)} target="_blank" removeUnderline>
+      {p.title}
+    </Link>,
     badgeFor(p.flag),
     p.currentInventory.toString(),
     p.daysOfStockRemaining !== null ? `${Math.round(p.daysOfStockRemaining)} days left` : "—",
@@ -122,13 +134,11 @@ export default function Dashboard() {
       <Layout>
         <Layout.Section>
           <Card>
-            <BlockStack gap="400">
-              <DataTable
-                columnContentTypes={["text", "text", "numeric", "text", "text"]}
-                headings={["Product", "Signal", "Stock", "Runway", "Why"]}
-                rows={rows}
-              />
-            </BlockStack>
+            <DataTable
+              columnContentTypes={["text", "text", "numeric", "text", "text"]}
+              headings={["Product", "Signal", "Stock", "Runway", "Why"]}
+              rows={rows}
+            />
           </Card>
         </Layout.Section>
       </Layout>
