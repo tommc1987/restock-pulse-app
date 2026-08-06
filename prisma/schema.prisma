@@ -70,3 +70,28 @@ model ShopSyncStatus {
   lastSyncedAt DateTime @default(now()) @updatedAt
 }
 
+// Dated ledger of individual sales, one row per (shop, product, order). This
+// is the single source of truth for ProductSnapshot's unitsSoldLast7Days /
+// unitsSoldPrevious30DaysDailyAvg — both syncShopInventory() (full catalogue
+// sync) and the orders/paid webhook (single-product update) derive those
+// fields from a real windowed SUM over this table, never from a running
+// counter. A counter would need to "age out" old contributions at the 7-day
+// boundary with no reliable way to do that correctly without per-event
+// dates — this table IS those dates, so the window math is always exact
+// regardless of how long it's been since the last successful full sync.
+//
+// @@unique on (shop, productId, orderId) makes ingestion idempotent against
+// Shopify's at-least-once webhook delivery — a redelivered orders/paid for
+// the same order upserts the same row instead of double-counting.
+model ProductSaleEvent {
+  id         String   @id @default(cuid())
+  shop       String
+  productId  String
+  orderId    String
+  quantity   Int
+  occurredAt DateTime
+
+  @@unique([shop, productId, orderId])
+  @@index([shop, productId, occurredAt])
+}
+

@@ -64,6 +64,7 @@ const ORDERS_QUERY = `#graphql
     orders(first: 100, after: $cursor, query: $query) {
       pageInfo { hasNextPage endCursor }
       nodes {
+        id
         createdAt
         lineItems(first: 50) {
           nodes {
@@ -90,6 +91,15 @@ interface OrderLineAggregate {
   lastSaleDate: Date | null;
 }
 
+/** One row's worth of data for the ProductSaleEvent ledger — see
+ * schema.prisma for why this table exists. */
+interface SaleEvent {
+  productId: string;
+  orderId: string;
+  quantity: number;
+  occurredAt: Date;
+}
+
 interface PageInfo {
   hasNextPage: boolean;
   endCursor: string | null;
@@ -103,6 +113,7 @@ interface OrdersQueryResponse {
   data: {
     orders: {
       nodes: Array<{
+        id: string;
         createdAt: string;
         lineItems: { nodes: Array<{ quantity: number; product: { id: string } | null }> };
       }>;
@@ -120,7 +131,7 @@ interface OrdersQueryResponse {
  */
 export async function syncShopInventory(shop: string, admin: AdminApiContext): Promise<void> {
   const products = await fetchAllProducts(admin);
-  const salesByProduct = await fetchOrderAggregates(admin);
+  const { aggregates: salesByProduct, saleEvents } = await fetchOrderAggregates(admin);
 
   const now = new Date();
 
@@ -157,6 +168,22 @@ export async function syncShopInventory(shop: string, admin: AdminApiContext): P
       });
     }),
   );
+
+  // Replace this shop's ProductSaleEvent ledger wholesale with what we just
+  // fetched — the orders/paid webhook derives its rolling-window figures
+  // from this table, so it needs to reflect the same authoritative Orders
+  // API data the snapshot rows above were just built from. Wrapped in a
+  // single $transaction (one SQL BEGIN...COMMIT on SQLite) rather than two
+  // independent statements: if the process dies mid-write, the transaction
+  // never commits and rolls back to the untouched previous ledger — there's
+  // no intermediate "empty" or "half-replaced" state observable from
+  // outside it, only "still old" or "fully new."
+  await prisma.$transaction([
+    prisma.productSaleEvent.deleteMany({ where: { shop } }),
+    prisma.productSaleEvent.createMany({
+      data: saleEvents.map((event) => ({ shop, ...event })),
+    }),
+  ]);
 
   // Written last, after every product (even a catalogue of zero) has been
   // upserted — the dashboard uses this to tell "nothing to flag" apart from
@@ -237,6 +264,63 @@ export async function syncSingleProductFromInventoryItem(
   });
 }
 
+/**
+ * Handles one product line from an orders/paid webhook: records it in the
+ * ProductSaleEvent ledger (idempotent — a redelivered webhook for the same
+ * order+product upserts the same row rather than double-counting), then
+ * recomputes that product's rolling-window fields as a real windowed SUM
+ * over the ledger — never a "+quantity" increment. See schema.prisma's
+ * comment on ProductSaleEvent for why a counter isn't good enough here.
+ *
+ * Only updates an existing ProductSnapshot row (updateMany, not upsert) —
+ * mirrors syncSingleProductFromInventoryItem's convention: a product this
+ * app hasn't cataloged yet via a full sync can't be safely created from a
+ * sales event alone (no title/currentInventory), so it's left for the next
+ * full sync, same as any other newly-seen product.
+ */
+export async function recordPaidOrderLineItem(
+  shop: string,
+  productId: string,
+  orderId: string,
+  quantity: number,
+  occurredAt: Date,
+): Promise<void> {
+  await prisma.productSaleEvent.upsert({
+    where: { shop_productId_orderId: { shop, productId, orderId } },
+    create: { shop, productId, orderId, quantity, occurredAt },
+    update: { quantity, occurredAt },
+  });
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const events = await prisma.productSaleEvent.findMany({
+    where: { shop, productId, occurredAt: { gte: thirtyDaysAgo } },
+    select: { quantity: true, occurredAt: true },
+  });
+
+  let last7DaysUnits = 0;
+  let last30DaysUnits = 0;
+  let lastSaleDate: Date | null = null;
+  for (const event of events) {
+    last30DaysUnits += event.quantity;
+    if (event.occurredAt >= sevenDaysAgo) last7DaysUnits += event.quantity;
+    if (!lastSaleDate || event.occurredAt > lastSaleDate) lastSaleDate = event.occurredAt;
+  }
+
+  const daysSinceLastSale = lastSaleDate
+    ? Math.floor((Date.now() - lastSaleDate.getTime()) / (1000 * 60 * 60 * 24))
+    : 999;
+
+  await prisma.productSnapshot.updateMany({
+    where: { shop, productId },
+    data: {
+      unitsSoldLast7Days: last7DaysUnits,
+      unitsSoldPrevious30DaysDailyAvg: last30DaysUnits / 30,
+      daysSinceLastSale,
+    },
+  });
+}
+
 /** Reads back the cached snapshots for the dashboard route — no live API call. */
 export async function loadScoredProducts(shop: string): Promise<ProductSalesSnapshot[]> {
   const rows: ProductSnapshot[] = await prisma.productSnapshot.findMany({ where: { shop } });
@@ -271,8 +355,13 @@ async function fetchAllProducts(admin: AdminApiContext): Promise<ProductNode[]> 
 
 async function fetchOrderAggregates(
   admin: AdminApiContext,
-): Promise<Map<string, OrderLineAggregate>> {
+): Promise<{ aggregates: Map<string, OrderLineAggregate>; saleEvents: SaleEvent[] }> {
   const aggregates = new Map<string, OrderLineAggregate>();
+  // Keyed by `${orderId}:${productId}` — an order can have multiple line
+  // items for the same product (different variants), and ProductSaleEvent
+  // has exactly one row per (shop, productId, orderId), so quantities for
+  // the same order+product need to be combined before they become a row.
+  const eventsByOrderProduct = new Map<string, SaleEvent>();
   const sevenDaysAgo = daysAgoISO(7);
   const thirtyDaysAgo = daysAgoISO(30);
 
@@ -307,6 +396,19 @@ async function fetchOrderAggregates(
         }
 
         aggregates.set(productId, existing);
+
+        const eventKey = `${order.id}:${productId}`;
+        const existingEvent = eventsByOrderProduct.get(eventKey);
+        if (existingEvent) {
+          existingEvent.quantity += line.quantity;
+        } else {
+          eventsByOrderProduct.set(eventKey, {
+            productId,
+            orderId: order.id,
+            quantity: line.quantity,
+            occurredAt: createdAt,
+          });
+        }
       }
     }
 
@@ -314,7 +416,7 @@ async function fetchOrderAggregates(
     cursor = pageInfo.endCursor;
   }
 
-  return aggregates;
+  return { aggregates, saleEvents: [...eventsByOrderProduct.values()] };
 }
 
 function daysAgoISO(days: number): string {

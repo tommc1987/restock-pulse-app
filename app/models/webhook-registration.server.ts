@@ -104,5 +104,6 @@ export async function ensureAllWebhooksRegistered(
       "APP_SCOPES_UPDATE",
       `${appUrl}/webhooks/app/scopes_update`,
     ),
+    ensureWebhookRegistered(admin, "ORDERS_PAID", `${appUrl}/webhooks/orders/paid`),
   ]);
 }
