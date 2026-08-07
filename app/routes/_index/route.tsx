@@ -24,7 +24,7 @@ export default function App() {
       <div className={styles.content}>
         <h1 className={styles.heading}>Know what to restock before you run out</h1>
         <p className={styles.text}>
-          RestockPulse watches your sales velocity and flags which products
+          Stockler watches your sales velocity and flags which products
           are trending, slow-moving, or at risk of stocking out — so you
           always know what to reorder next.
         </p>

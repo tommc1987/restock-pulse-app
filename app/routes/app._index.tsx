@@ -97,7 +97,7 @@ export default function Dashboard() {
   // finishes and see what looks exactly like the original flagging bug.
   if (!synced) {
     return (
-      <Page title="RestockPulse">
+      <Page title="Stockler">
         <Card>
           <EmptyState heading="Syncing your inventory" image="/empty-state.svg">
             <p>We're pulling in your products and recent orders now — this page will update on its own once it's ready.</p>
@@ -109,7 +109,7 @@ export default function Dashboard() {
 
   if (scored.length === 0) {
     return (
-      <Page title="RestockPulse">
+      <Page title="Stockler">
         <Card>
           <EmptyState heading="Nothing flagged today" image="/empty-state.svg">
             <p>Your catalogue looks healthy. Check back tomorrow.</p>
@@ -130,7 +130,7 @@ export default function Dashboard() {
   ]);
 
   return (
-    <Page title="RestockPulse" subtitle="Products that need your attention today">
+    <Page title="Stockler" subtitle="Products that need your attention today">
       <Layout>
         <Layout.Section>
           <Card>

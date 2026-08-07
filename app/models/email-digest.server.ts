@@ -48,7 +48,7 @@ function buildDigestHtml(shopName: string, scored: ScoredProduct[]): string {
 
   return `
     <div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;">
-      <h2 style="color:#08883A;">RestockPulse — ${shopName}</h2>
+      <h2 style="color:#08883A;">Stockler — ${shopName}</h2>
       <p>Here's what needs your attention today:</p>
       <table style="width:100%;border-collapse:collapse;">
         <thead>
@@ -61,7 +61,7 @@ function buildDigestHtml(shopName: string, scored: ScoredProduct[]): string {
         <tbody>${rows}</tbody>
       </table>
       <p style="margin-top:24px;color:#666;font-size:13px;">
-        This is an automated daily summary from RestockPulse. Open your app dashboard for the full list.
+        This is an automated daily summary from Stockler. Open your app dashboard for the full list.
       </p>
     </div>
   `;
@@ -92,9 +92,9 @@ export async function sendDigestEmail(
       // getstockler.com isn't verified in Resend yet — until it is, sends must stay on
       // Resend's shared onboarding@resend.dev domain. Once verified, set RESEND_FROM_ADDRESS
       // to something like "Stockler <hello@getstockler.com>".
-      from: process.env.RESEND_FROM_ADDRESS || "RestockPulse <onboarding@resend.dev>",
+      from: process.env.RESEND_FROM_ADDRESS || "Stockler <onboarding@resend.dev>",
       to: [toEmail],
-      subject: `RestockPulse: ${scored.length} product${scored.length === 1 ? "" : "s"} need attention today`,
+      subject: `Stockler: ${scored.length} product${scored.length === 1 ? "" : "s"} need attention today`,
       html: buildDigestHtml(shopName, scored),
     }),
   });
