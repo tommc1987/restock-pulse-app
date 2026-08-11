@@ -15,6 +15,7 @@ import { syncShopInventory, loadScoredProducts } from "../models/inventory-sync.
 import { scoreCatalogue } from "../models/trend-score.server";
 import { getShopContactInfo, sendDigestEmail } from "../models/email-digest.server";
 import { withOfflineTokenRetry, isOfflineTokenRefreshFailure } from "../models/offline-token-retry.server";
+import { recordShopUninstall } from "../models/shop-uninstall.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   const secret = request.headers.get("X-Sync-Secret");
@@ -89,6 +90,7 @@ export async function action({ request }: ActionFunctionArgs) {
       // cause; mirrors the cleanup webhooks.app.uninstalled.tsx already
       // does on a clean uninstall.
       if (isOfflineTokenRefreshFailure(reason)) {
+        await recordShopUninstall(shops[i], "cron_inferred");
         await prisma.session.deleteMany({ where: { shop: shops[i] } });
         console.error(
           `[sync-all] Removing orphaned session for ${shops[i]} — repeated bare-500 offline token refresh failure`,

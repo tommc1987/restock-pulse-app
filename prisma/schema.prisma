@@ -95,3 +95,17 @@ model ProductSaleEvent {
   @@index([shop, productId, occurredAt])
 }
 
+// Deliberately its own model, not a field on Session/ProductSnapshot/etc —
+// those four are exactly what shop/redact deletes, and this timestamp needs
+// to survive that deletion to be useful for confirming shop/redact's own
+// 48-hour timing on a future backfill. One row per shop (upserted), tracking
+// only the most recent uninstall — not a full install/uninstall history.
+// See app/models/shop-uninstall.server.ts for the write path and the
+// source-confidence rule (a "webhook" record is never downgraded by a later
+// "cron_inferred" one).
+model ShopUninstall {
+  shop          String   @id
+  uninstalledAt DateTime
+  source        String // "webhook" | "cron_inferred"
+}
+
